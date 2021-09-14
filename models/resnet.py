@@ -63,7 +63,7 @@ class BasicBlock(nn.Module):
 
 class ResNet(nn.Module):
 
-    def __init__(self, block, layers, in_channel=1, out_channel=10):
+    def __init__(self, block=BasicBlock, layers=[2, 2, 2, 2], in_channel=1, out_channel=10):
         super(ResNet, self).__init__()
         self.inplanes = 64
         self.feature = nn.Sequential()
