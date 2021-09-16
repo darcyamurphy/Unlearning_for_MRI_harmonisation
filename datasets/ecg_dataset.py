@@ -59,7 +59,7 @@ def resample(input_signal, src_fs, tar_fs):
 # implementation of pytorch map-style dataset
 class SimpleDataset(Dataset):
 
-    def __init__(self, labels, data, age, gender, fs, domain_id, transform=None, loader=load_data):
+    def __init__(self, labels, data, age, gender, fs, domain, transform=None, loader=load_data):
         self.data = data
         self.multi_labels = [labels[i, :] for i in range(labels.shape[0])]
         self.age = age
@@ -67,7 +67,7 @@ class SimpleDataset(Dataset):
         self.fs = fs
         self.transforms = transform
         self.loader = loader
-        self.domain = np.ones(len(data)) * domain_id
+        self.domain = domain
 
     def __len__(self):
         return len(self.data)
@@ -82,4 +82,4 @@ class SimpleDataset(Dataset):
         label = self.multi_labels[item]
         img = self.transforms(img)
         domain = self.domain[item]
-        return img, torch.from_numpy(label).float(), torch.from_numpy(domain).float()
+        return img, torch.from_numpy(label).float(), torch.from_numpy(domain).long()

@@ -11,8 +11,8 @@ class Encoder(nn.Module):
         super(Encoder, self).__init__()
         self.resnet = models.resnet.ResNet(in_channel=input_channel, out_channel=feature_dimension)
 
-    def forward(self, x, ag):
-        features = self.resnet(x, ag)
+    def forward(self, x):
+        features = self.resnet(x)
         return features
 
 

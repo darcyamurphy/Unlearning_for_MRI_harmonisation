@@ -7,21 +7,23 @@ from datasets.ecg_dataset import SimpleDataset
 seq_len = 4096
 
 
-def load_data(train_csv, val_csv):
+def load_data(train_csv, val_csv, domain_count, domain_id):
     train_pd = drop_equivalent_classes(pd.read_csv(train_csv))
     val_pd = drop_equivalent_classes(pd.read_csv(val_csv))
-    train_dataset = build_dataset(train_pd, Compose([RandomClip(len=seq_len), Normalize('none'), Retype()]))
-    val_dataset = build_dataset(val_pd, Compose([ValClip(len=seq_len), Normalize('none'), Retype()]))
+    train_dataset = build_dataset(train_pd, Compose([RandomClip(len=seq_len), Normalize('none'), Retype()]), domain_count, domain_id)
+    val_dataset = build_dataset(val_pd, Compose([ValClip(len=seq_len), Normalize('none'), Retype()]), domain_count, domain_id)
     return train_dataset, val_dataset
 
 
-def build_dataset(annotations, transforms):
+def build_dataset(annotations, transforms, domain_count, domain_id):
     filenames = annotations['filename'].tolist()
     labels = annotations.iloc[:, 4:].values
     age = annotations['age'].tolist()
     gender = annotations['gender'].tolist()
     fs = annotations['fs'].tolist()
-    dataset = SimpleDataset(labels, filenames, age, gender, fs, transform=transforms)
+    domain = np.zeros((len(filenames), domain_count))
+    domain[:,domain_id] = 1
+    dataset = SimpleDataset(labels, filenames, age, gender, fs, domain, transform=transforms)
     return dataset
 
 
@@ -98,7 +100,8 @@ class ValClip(object):
 
     def __call__(self, seq):
         if seq.shape[1] >= self.len:
-            seq = seq
+            start = random.randint(0, seq.shape[1] - self.len)
+            seq = seq[:, start:start + self.len]
         else:
             zeros_padding = np.zeros(shape=(seq.shape[0], self.len - seq.shape[1]), dtype=np.float32)
             seq = np.hstack((seq, zeros_padding))

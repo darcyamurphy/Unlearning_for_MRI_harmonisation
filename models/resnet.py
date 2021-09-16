@@ -77,8 +77,8 @@ class ResNet(nn.Module):
         self.feature.add_module('layer4', self._make_layer(block, 512, layers[3], stride=2))
         self.feature.add_module('avgpool', nn.AdaptiveAvgPool1d(1))
 
-        self.fc1 = nn.Linear(5, 10)
-        self.fc = nn.Linear(512 * block.expansion + 10, out_channel)
+        #self.fc1 = nn.Linear(5, 10)
+        self.fc = nn.Linear(512 * block.expansion, out_channel)
 
         # not sure if this is useful or if i can remove it
         for m in self.modules():
@@ -106,11 +106,11 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
 
 
-    def forward(self, x, ag):
+    def forward(self, x):
         x = self.feature(x)
         x = x.view(x.size(0), -1)
-        ag = self.fc1(ag)
-        x = torch.cat((ag, x), dim=1)
+        #ag = self.fc1(ag)
+        #x = torch.cat((ag, x), dim=1)
         x = self.fc(x)
 
         return x

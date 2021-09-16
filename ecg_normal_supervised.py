@@ -7,7 +7,7 @@ import torch.nn as nn
 from losses.confusion_loss import confusion_loss
 import torch.optim as optim
 import numpy as np
-from train_utils import train_unlearn_threedatasets, val_unlearn_threedatasets, train_encoder_unlearn_threedatasets, val_encoder_unlearn_threedatasets
+from ecg_train_utils import train_encoder_unlearn_threedatasets, val_encoder_unlearn_threedatasets, train_unlearn_threedatasets, val_unlearn_threedatasets
 import sys
 
 
@@ -31,27 +31,26 @@ if __name__ == "__main__":
         print('Cuda Available', flush=True)
 
     args = Args()
-    args.epochs = 300
-    args.batch_size = 1
+    args.batch_size = 4
     args.domain_count = 3
     args.learning_rate = 1e-4
     args.patience = 50
-    args.epochs = 300
+    args.epochs = 10
     args.epoch_reached = 1
-    args.epoch_stage_1 = 100
+    args.epoch_stage_1 = 5
 
     # load data
-    clean_train_path = 'clean_train.csv'
-    clean_val_path = 'clean_val.csv'
-    clean_train_dataset, clean_val_dataset = ecg_utils.load_data(clean_train_path, clean_val_path)
+    clean_train_path = 'data_splits/cpsc_clean_train.csv'
+    clean_val_path = 'data_splits/cpsc_clean_val.csv'
+    clean_train_dataset, clean_val_dataset = ecg_utils.load_data(clean_train_path, clean_val_path, args.domain_count, 0)
 
-    gaus_train_path = 'gaus_train.csv'
-    gaus_val_path = 'gaus_val.csv'
-    gaus_train_dataset, gaus_val_dataset = ecg_utils.load_data(gaus_train_path, gaus_val_path)
+    gaus_train_path = 'data_splits/cpsc_gaus_train.csv'
+    gaus_val_path = 'data_splits/cpsc_gaus_val.csv'
+    gaus_train_dataset, gaus_val_dataset = ecg_utils.load_data(gaus_train_path, gaus_val_path, args.domain_count, 1)
 
-    sin_train_path = 'sin_train.csv'
-    sin_val_path = 'sin_val.csv'
-    sin_train_dataset, sin_val_dataset = ecg_utils.load_data(sin_train_path, sin_val_path)
+    sin_train_path = 'data_splits/cpsc_sin_train.csv'
+    sin_val_path = 'data_splits/cpsc_sin_val.csv'
+    sin_train_dataset, sin_val_dataset = ecg_utils.load_data(sin_train_path, sin_val_path, args.domain_count, 2)
 
     c_train_dataloader = DataLoader(clean_train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
     c_val_dataloader = DataLoader(clean_val_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
