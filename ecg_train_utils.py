@@ -94,8 +94,8 @@ def train_encoder_unlearn_threedatasets(args, models, train_loaders, optimizers,
                 loss.backward()
                 optimizer.step()
 
-                regressor_loss += r_loss
-                domain_loss += d_loss
+                regressor_loss += float(r_loss)
+                domain_loss += float(d_loss)
 
                 domains = np.argmax(domain_pred.detach().cpu().numpy(), axis=1)
                 domain_target = np.argmax(domain_target.detach().cpu().numpy(), axis=1)
@@ -179,9 +179,11 @@ def train_unlearn_threedatasets(args, models, train_loaders, optimizers, criteri
                 loss_conf.backward(retain_graph=False)
                 optimizer_conf.step()
 
-                regressor_loss += loss
-                domain_loss += loss_dm
-                conf_loss += loss_conf
+                # need to wrap losses in float() to not retain graph in the sum
+                # without this we get a big memory leak and the computer explodes
+                regressor_loss += float(loss)
+                domain_loss += float(loss_dm)
+                conf_loss += float(loss_conf)
 
                 output_dm_conf = np.argmax(output_dm_conf.detach().cpu().numpy(), axis=1)
                 domain_target = np.argmax(domain_target.detach().cpu().numpy(), axis=1)
@@ -189,12 +191,12 @@ def train_unlearn_threedatasets(args, models, train_loaders, optimizers, criteri
                 pred_domains.append(output_dm_conf)
 
                 if batch_idx % args.log_interval == 0:
-                    print(batch_idx)
-                    print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                    print('Train Unlearning Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                         epoch, (batch_idx+1) * len(data), len(b_train_dataloader.dataset),
                                100. * (batch_idx+1) / len(b_train_dataloader), loss.item()), flush=True)
                     print('\t \t Confusion loss = ', loss_conf.item())
                     print('\t \t Domain Loss = ', loss_dm.item(), flush=True)
+
                 del target
                 del loss
                 del features
@@ -304,7 +306,11 @@ def val_unlearn_threedatasets(args, models, val_loaders, criterions):
 
                 domains = domain_predictor.forward(features)
                 domains = np.argmax(domains.detach().cpu().numpy(), axis=1)
-                domain_target = np.argmax(domain_target.detach().cpu().numpy(), axis=1)
+
+                # sometimes domain target is a tensor and sometimes it's already an ndarray and i don't know why!
+                if not isinstance(domain_target, np.ndarray):
+                    domain_target = np.argmax(domain_target.detach().cpu().numpy(), axis=1)
+
                 true_domains.append(domain_target)
                 pred_domains.append(domains)
 
@@ -316,6 +322,5 @@ def val_unlearn_threedatasets(args, models, val_loaders, criterions):
 
     print('\nValidation set: Average loss: {:.4f}\n'.format(val_loss,  flush=True))
     print('Validation set: Average Acc: {:.4f}\n'.format(acc,  flush=True))
-
     return val_loss, acc
 

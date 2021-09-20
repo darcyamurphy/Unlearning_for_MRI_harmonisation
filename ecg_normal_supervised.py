@@ -31,13 +31,13 @@ if __name__ == "__main__":
         print('Cuda Available', flush=True)
 
     args = Args()
-    args.batch_size = 4
+    args.batch_size = 16
     args.domain_count = 3
     args.learning_rate = 1e-4
     args.patience = 50
-    args.epochs = 10
+    args.epochs = 300
     args.epoch_reached = 1
-    args.epoch_stage_1 = 5
+    args.epoch_stage_1 = 100
 
     # load data
     clean_train_path = 'data_splits/cpsc_clean_train.csv'
