@@ -35,9 +35,9 @@ if __name__ == "__main__":
     args.domain_count = 3
     args.learning_rate = 1e-4
     args.patience = 50
-    args.epochs = 300
+    args.epochs = 50
     args.epoch_reached = 1
-    args.epoch_stage_1 = 100
+    args.epoch_stage_1 = 25
 
     # load data
     clean_train_path = 'data_splits/cpsc_clean_train.csv'

@@ -94,8 +94,8 @@ def train_encoder_unlearn_threedatasets(args, models, train_loaders, optimizers,
                 loss.backward()
                 optimizer.step()
 
-                regressor_loss += float(r_loss)
-                domain_loss += float(d_loss)
+                regressor_loss += r_loss
+                domain_loss += d_loss
 
                 domains = np.argmax(domain_pred.detach().cpu().numpy(), axis=1)
                 domain_target = np.argmax(domain_target.detach().cpu().numpy(), axis=1)
@@ -179,11 +179,9 @@ def train_unlearn_threedatasets(args, models, train_loaders, optimizers, criteri
                 loss_conf.backward(retain_graph=False)
                 optimizer_conf.step()
 
-                # need to wrap losses in float() to not retain graph in the sum
-                # without this we get a big memory leak and the computer explodes
-                regressor_loss += float(loss)
-                domain_loss += float(loss_dm)
-                conf_loss += float(loss_conf)
+                regressor_loss += loss
+                domain_loss += loss_dm
+                conf_loss += loss_conf
 
                 output_dm_conf = np.argmax(output_dm_conf.detach().cpu().numpy(), axis=1)
                 domain_target = np.argmax(domain_target.detach().cpu().numpy(), axis=1)
@@ -202,9 +200,12 @@ def train_unlearn_threedatasets(args, models, train_loaders, optimizers, criteri
                 del features
                 torch.cuda.empty_cache()
 
-    av_loss = regressor_loss / batches
-    av_conf = conf_loss / batches
-    av_dom = domain_loss / batches
+    # need to wrap losses in float() to not retain graph in the sum
+    # without this we get a big memory leak and the computer explodes
+    # but does doing it stop us learning?
+    av_loss = float(regressor_loss) / batches
+    av_conf = float(conf_loss) / batches
+    av_dom = float(domain_loss) / batches
 
     true_domains = np.array(true_domains).reshape(-1)
     pred_domains = np.array(pred_domains).reshape(-1)
