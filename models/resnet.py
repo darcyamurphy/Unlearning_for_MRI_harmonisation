@@ -36,22 +36,27 @@ class BasicBlock(nn.Module):
 
     def __init__(self, inplanes, planes, stride=1, downsample=None):
         super(BasicBlock, self).__init__()
-        self.sequential = nn.Sequential()
-        self.sequential.add_module('conv1', conv3x1(inplanes, planes, stride))
-        self.sequential.add_module('bn1', nn.BatchNorm1d(planes))
-        self.sequential.add_module('relu', nn.ReLU(inplace=True))
-        self.sequential.add_module('dropout', nn.Dropout(.2))
-        self.sequential.add_module('conv2', conv3x1(planes, planes))
-        self.sequential.add_module('bn2', nn.BatchNorm1d(planes))
-        self.sequential.add_module('se', SELayer(planes))
+        self.conv1 = conv3x1(inplanes, planes, stride)
+        self.bn1 = nn.BatchNorm1d(planes)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv2 = conv3x1(planes, planes)
+        self.bn2 = nn.BatchNorm1d(planes)
+        self.se = SELayer(planes)
         self.downsample = downsample
         self.stride = stride
-        self.relu = nn.ReLU(inplace=True)
+        self.dropout = nn.Dropout(.2)
 
     def forward(self, x):
         identity = x
 
-        out = self.sequential(x)
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+        out = self.dropout(out)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+        out = self.se(out)
         if self.downsample is not None:
             identity = self.downsample(x)
 
