@@ -83,7 +83,7 @@ class ResNet(nn.Module):
         self.feature.add_module('avgpool', nn.AdaptiveAvgPool1d(1))
 
         #self.fc1 = nn.Linear(5, 10)
-        self.fc = nn.Linear(512 * block.expansion, out_channel)
+        #self.fc = nn.Linear(512 * block.expansion, out_channel)
 
         for m in self.modules():
             if isinstance(m, nn.Conv1d):
@@ -115,6 +115,6 @@ class ResNet(nn.Module):
         x = x.view(x.size(0), -1)
         #ag = self.fc1(ag)
         #x = torch.cat((ag, x), dim=1)
-        x = self.fc(x)
+        #x = self.fc(x)
 
         return x

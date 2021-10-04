@@ -8,7 +8,7 @@ import torch.nn as nn
 
 
 def train_only(args, models, train_loaders, optimizers, criterions, epoch):
-    [encoder] = models
+    [encoder, regressor] = models
     [optimizer] = optimizers
     [b_train_dataloader, o_train_dataloader, w_train_dataloader] = train_loaders
     [criteron] = criterions
@@ -16,6 +16,7 @@ def train_only(args, models, train_loaders, optimizers, criterions, epoch):
     regressor_loss = 0
     sigmoid = nn.Sigmoid()
     encoder.train()
+    regressor.train()
 
     batches = 0
     for batch_idx, (b, o, w) in enumerate(zip(b_train_dataloader, o_train_dataloader, w_train_dataloader)):
@@ -31,7 +32,8 @@ def train_only(args, models, train_loaders, optimizers, criterions, epoch):
                 # First update the encoder and regressor
                 optimizer.zero_grad()
                 features = encoder(data)
-                y_pred = sigmoid(features)
+                output_pred = regressor(features)
+                y_pred = sigmoid(output_pred)
                 if batch_idx == 0:
                     labels_all = target
                     logits_prob_all = y_pred
@@ -71,11 +73,12 @@ def train_only(args, models, train_loaders, optimizers, criterions, epoch):
 
 
 def val_only(args, models, val_loaders, criterions):
-    [encoder] = models
+    [encoder, regressor] = models
     [b_val_dataloader, o_val_dataloader, w_val_dataloader] = val_loaders
     [criteron] = criterions
     sigmoid = nn.Sigmoid()
     encoder.eval()
+    regressor.eval()
 
     regressor_loss = 0
 
@@ -90,13 +93,25 @@ def val_only(args, models, val_loaders, criterions):
                 if list(data.size())[0] == args.batch_size:
                     batches += 1
                     features = encoder(data)
-                    y_pred = sigmoid(features)
-                    r_loss = ecg_train_utils.calculate_regression_loss(criteron, y_pred, target)
+                    output_pred = regressor(features)
+                    y_pred = sigmoid(output_pred)
 
+                    if batch_idx == 0:
+                        labels_all = target
+                        logits_prob_all = y_pred
+                    else:
+                        labels_all = torch.cat((labels_all, target), 0)
+                        logits_prob_all = torch.cat((logits_prob_all, y_pred), 0)
+
+                    r_loss = ecg_train_utils.calculate_regression_loss(criteron, y_pred, target)
                     regressor_loss += r_loss
 
     val_loss = regressor_loss / batches
+    tp_rate = ecg_train_utils.true_positive_rate(labels_all, logits_prob_all)
+    challenge_metric = physionet_metrics.calc_accuracy(labels_all, logits_prob_all, '.', threshold=0.5)
 
     print('\nValidation set: Average loss: {:.4f}\n'.format(val_loss, flush=True))
+    print('True positive rate: {:.4f}'.format(tp_rate), flush=True)
+    print('Challenge Metric: {:.4f}'.format(challenge_metric, flush=True))
 
     return val_loss

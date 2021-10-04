@@ -1,7 +1,7 @@
 from utils import Args
 from torch.utils.data import DataLoader
 import ecg_utils
-from models.resnet import ResNet
+from models.ecg_predictor import Regressor, Encoder
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -37,6 +37,7 @@ if __name__ == "__main__":
     args.epochs = 20
     args.epoch_reached = 1
     args.epoch_stage_1 = 25
+    args.log_interval = 100
 
     # load data
     clean_train_path = 'data_splits/cpsc_clean_train.csv'
@@ -59,19 +60,21 @@ if __name__ == "__main__":
     s_val_dataloader = DataLoader(sin_val_dataset, batch_size=1, shuffle=True, num_workers=0)
 
     # Load the model
-    model = ResNet(in_channel=12, out_channel=24)
+    encoder = Encoder()
+    regressor = Regressor()
 
     if cuda:
-        model = model.cuda()
+        encoder = encoder.cuda()
+        regressor = regressor.cuda()
 
     criteron = nn.MSELoss()
 
     if cuda:
         criteron = criteron.cuda()
 
-    optimizer = optim.Adam(list(model.parameters()), lr=args.learning_rate)
+    optimizer = optim.Adam(list(encoder.parameters()) + list(regressor.parameters()), lr=args.learning_rate)
 
-    models = [model]
+    models = [encoder, regressor]
     optimizers = [optimizer]
     train_dataloaders = [c_train_dataloader, g_train_dataloader, s_train_dataloader]
     val_dataloaders = [c_val_dataloader, g_val_dataloader, s_val_dataloader]
