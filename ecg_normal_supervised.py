@@ -69,7 +69,7 @@ if __name__ == "__main__":
         regressor = regressor.cuda()
         domain_predictor = domain_predictor.cuda()
 
-    criteron = nn.MSELoss()
+    criteron = nn.BCEWithLogitsLoss()
     domain_criterion = nn.CrossEntropyLoss()
     conf_criterion = confusion_loss()
 
@@ -81,11 +81,9 @@ if __name__ == "__main__":
     optimizer_step1 = optim.Adam(list(encoder.parameters()) + list(regressor.parameters()) +
                                  list(domain_predictor.parameters()), lr=args.learning_rate)
 
-    optimizer = optim.Adam(list(encoder.parameters()) + list(regressor.parameters()), lr=1e-6)
-    optimizer_conf = optim.Adam(list(encoder.parameters()), lr=1e-6)
-    optimizer_dm = optim.Adam(list(domain_predictor.parameters()), lr=1e-6)
-
-    optimizers = [optimizer, optimizer_conf, optimizer_dm]
+    optimizer = optim.Adam(list(encoder.parameters()) + list(regressor.parameters()), lr=1e-4)
+    optimizer_conf = optim.Adam(list(encoder.parameters()), lr=1e-4)
+    optimizer_dm = optim.Adam(list(domain_predictor.parameters()), lr=1e-4)
 
     # Initalise the early stopping
     early_stopping = EarlyStopping_unlearning(args.patience, verbose=False)
@@ -93,6 +91,7 @@ if __name__ == "__main__":
     loss_store = []
 
     models = [encoder, regressor, domain_predictor]
+    optimizers = [optimizer, optimizer_conf, optimizer_dm]
     train_dataloaders = [c_train_dataloader, g_train_dataloader, s_train_dataloader]
     val_dataloaders = [c_val_dataloader, g_val_dataloader, s_val_dataloader]
     criterions = [criteron, conf_criterion, domain_criterion]
@@ -101,9 +100,9 @@ if __name__ == "__main__":
         if epoch < args.epoch_stage_1:
             print('Training Main Encoder')
             print('Epoch ', epoch, '/', args.epochs, flush=True)
-
+            optimizers = [optimizer_step1]
             loss, acc, dm_loss, conf_loss = train_encoder_unlearn_threedatasets(args, models, train_dataloaders,
-                                                                                [optimizer_step1], criterions, epoch)
+                                                                                optimizers, criterions, epoch)
             torch.cuda.empty_cache()  # Clear memory cache
             val_loss, val_acc = val_encoder_unlearn_threedatasets(args, models, val_dataloaders, criterions)
             loss_store.append([loss, val_loss, acc, val_acc, dm_loss, conf_loss])
@@ -116,6 +115,11 @@ if __name__ == "__main__":
                 torch.save(domain_predictor.state_dict(), PRE_TRAIN_DOMAIN)
 
         else:
+            optimizer = optim.Adam(list(encoder.parameters()) + list(regressor.parameters()), lr=1e-6)
+            optimizer_conf = optim.Adam(list(encoder.parameters()), lr=1e-6)
+            optimizer_dm = optim.Adam(list(domain_predictor.parameters()), lr=1e-6)
+            optimizers = [optimizer, optimizer_conf, optimizer_dm]
+
             print('Unlearning')
             print('Epoch ', epoch, '/', args.epochs, flush=True)
 

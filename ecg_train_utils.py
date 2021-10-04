@@ -2,6 +2,7 @@ import torch
 import numpy as np
 from torch.autograd import Variable
 from sklearn.metrics import accuracy_score
+import physionet_metrics
 
 
 def get_batch_split(b, o, w, batch_size):
@@ -9,27 +10,36 @@ def get_batch_split(b, o, w, batch_size):
     (o_data, o_target, o_domain) = o
     (w_data, w_target, w_domain) = w
 
-    if not (len(b_data) == batch_size and len(o_data) == batch_size and len(w_data) == batch_size):
-        return None, None
-
-    max_batch = len(b_data)
-    n1 = np.random.randint(1, max_batch - 2)  # Must be at least one from each
-    n2 = np.random.randint(1, max_batch - n1 - 1)
-    n3 = max_batch - n1 - n2
-    if n3 < 1:
-        assert ValueError('N3 must be greater that zero')
-
-    b_data = b_data[:n1]
-    b_target = b_target[:n1]
-    b_domain = b_domain[:n1]
-
-    o_data = o_data[:n2]
-    o_target = o_target[:n2]
-    o_domain = o_domain[:n2]
-
-    w_data = w_data[:n3]
-    w_target = w_target[:n3]
-    w_domain = w_domain[:n3]
+    # if not (len(b_data) == batch_size and len(o_data) == batch_size and len(w_data) == batch_size):
+    #     return None, None
+    #
+    #
+    # domain_count = 3
+    # if batch_size < domain_count:
+    #     assert ValueError('batch size must be at least equal to domain count')
+    # elif batch_size == domain_count:
+    #     n1 = 1
+    #     n2 = 2
+    #     n3 = 3
+    # else:
+    #     max_batch = len(b_data)
+    #     n1 = np.random.randint(1, max_batch - 2)  # Must be at least one from each
+    #     n2 = np.random.randint(1, max_batch - n1 - 1)
+    #     n3 = max_batch - n1 - n2
+    #     if n3 < 1:
+    #         assert ValueError('N3 must be greater that zero')
+    #
+    # b_data = b_data[:n1]
+    # b_target = b_target[:n1]
+    # b_domain = b_domain[:n1]
+    #
+    # o_data = o_data[:n2]
+    # o_target = o_target[:n2]
+    # o_domain = o_domain[:n2]
+    #
+    # w_data = w_data[:n3]
+    # w_target = w_target[:n3]
+    # w_domain = w_domain[:n3]
 
     data = torch.cat((b_data, o_data, w_data), 0)
     target = torch.cat((b_target, o_target, w_target), 0)
@@ -41,19 +51,38 @@ def get_batch_split(b, o, w, batch_size):
 
     data, target, domain_target = Variable(data), Variable(target), Variable(domain_target)
 
-    return (n1, n2, n3), (data, target, domain_target)
+    return (data, target, domain_target)
 
 
-def calculate_regression_loss(criteron, output_pred, target, n1, n2):
-    loss_1 = criteron(output_pred[:n1], target[:n1])
-    loss_2 = criteron(output_pred[n1:n1 + n2], target[n1:n1 + n2])
-    loss_3 = criteron(output_pred[n1 + n2:], target[n1 + n2:])
-    r_loss = loss_1 + loss_2 + loss_3
+def calculate_regression_loss(criteron, output_pred, target):
+    # loss_1 = criteron(output_pred[:n1], target[:n1])
+    # loss_2 = criteron(output_pred[n1:n1 + n2], target[n1:n1 + n2])
+    # loss_3 = criteron(output_pred[n1 + n2:], target[n1 + n2:])
+    # r_loss = loss_1 + loss_2 + loss_3
+    r_loss = criteron(output_pred, target)
     return r_loss
 
 
 def calculate_domain_loss(domain_criterion, domain_pred, domain_target):
     return domain_criterion(domain_pred, torch.max(domain_target, 1)[1])
+
+
+def true_positive_rate(y_true, y_pred):
+    y_true = y_true.detach().cpu().numpy()
+    y_pred = y_pred.detach().cpu().numpy()
+
+    true_positives = 0
+    false_negatives = 0
+    for i in range(0, len(y_true)):
+        for j in range(0, len(y_true[0])):
+            if y_pred[i][j] >= 0.5 and y_true[i][j] == 1:
+                true_positives += 1
+            elif y_pred[i][j] < 0.5 and y_true[i][j] == 1:
+                false_negatives += 1
+
+    if true_positives + false_negatives == 0:
+        return 0
+    return true_positives/(true_positives + false_negatives)
 
 
 def train_encoder_unlearn_threedatasets(args, models, train_loaders, optimizers, criterions, epoch):
@@ -71,6 +100,8 @@ def train_encoder_unlearn_threedatasets(args, models, train_loaders, optimizers,
 
     true_domains = []
     pred_domains = []
+    tp_rate = 0
+    challenge_metric = 0
 
     batches = 0
     for batch_idx, (b, o, w) in enumerate(zip(b_train_dataloader, o_train_dataloader, w_train_dataloader)):
@@ -102,12 +133,17 @@ def train_encoder_unlearn_threedatasets(args, models, train_loaders, optimizers,
                 true_domains.append(domain_target)
                 pred_domains.append(domains)
 
+                tp_rate += true_positive_rate(target, output_pred)
+                challenge_metric += physionet_metrics.calc_accuracy(target, output_pred, '.')
+
                 if batch_idx % args.log_interval == 0:
                     print('Train Epoch: {} [{}/{} ({:.0f}%)]\t Regressor Loss: {:.6f}'.format(
                         epoch, (batch_idx+1) * len(data), len(b_train_dataloader.dataset),
                                100. * (batch_idx+1) / len(b_train_dataloader), r_loss.item()), flush=True)
                     print('Regressor Loss: {:.4f}'.format(r_loss, flush=True))
                     print('Domain Loss: {:.4f}'.format(d_loss, flush=True))
+                    print('True positive rate: {:.4f}'.format(tp_rate/batches), flush=True)
+                    print('Challenge Metric: {:.4f}'.format(challenge_metric/batches, flush=True))
 
                 del target
                 del r_loss
@@ -119,13 +155,15 @@ def train_encoder_unlearn_threedatasets(args, models, train_loaders, optimizers,
 
     true_domains = np.array(true_domains).reshape(-1)
     pred_domains = np.array(pred_domains).reshape(-1)
-    acc = accuracy_score(true_domains, pred_domains)
+    domain_acc = accuracy_score(true_domains, pred_domains)
+
 
     print('\nTraining set: Average loss: {:.4f}'.format(av_loss,  flush=True))
+    print('Class Accuracy: {:.4f}'.format(tp_rate / batches), flush=True)
     print('Training set: Average Domain loss: {:.4f}'.format(av_dom_loss,  flush=True))
-    print('Training set: Average Acc: {:.4f}'.format(acc,  flush=True))
+    print('Training set: Average Domain Acc: {:.4f}'.format(domain_acc,  flush=True))
 
-    return av_loss, acc, av_dom_loss, np.NaN
+    return av_loss, domain_acc, av_dom_loss, np.NaN
 
 
 def train_unlearn_threedatasets(args, models, train_loaders, optimizers, criterions, epoch):

@@ -85,7 +85,6 @@ class ResNet(nn.Module):
         #self.fc1 = nn.Linear(5, 10)
         self.fc = nn.Linear(512 * block.expansion, out_channel)
 
-        # not sure if this is useful or if i can remove it
         for m in self.modules():
             if isinstance(m, nn.Conv1d):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')

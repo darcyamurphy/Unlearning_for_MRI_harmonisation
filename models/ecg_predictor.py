@@ -24,6 +24,7 @@ class Regressor(nn.Module):
         self.regressor.add_module('r_fc2', nn.Linear(feature_dimension, 32))
         self.regressor.add_module('r_relu2', nn.ReLU(True))
         self.regressor.add_module('r_pred', nn.Linear(32, prediction_classes))
+        self.regressor.add_module('sigmoid', nn.Sigmoid())
 
     def forward(self, x):
         regression = self.regressor(x)
