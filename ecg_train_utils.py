@@ -2,6 +2,8 @@ import torch
 import numpy as np
 from torch.autograd import Variable
 from sklearn.metrics import accuracy_score
+from torch.cuda.amp import autocast
+
 import physionet_metrics
 import torch.nn as nn
 
@@ -64,10 +66,6 @@ def calculate_regression_loss(criteron, output_pred, target):
     return r_loss
 
 
-def calculate_domain_loss(domain_criterion, domain_pred, domain_target):
-    return domain_criterion(domain_pred, torch.max(domain_target, 1)[1])
-
-
 def true_positive_rate(y_true, y_pred):
     y_true = y_true.detach().cpu().numpy()
     y_pred = y_pred.detach().cpu().numpy()
@@ -106,8 +104,7 @@ def train_encoder_unlearn_threedatasets(args, models, train_loaders, optimizers,
     batches = 0
     for batch_idx, (b, o, w) in enumerate(zip(b_train_dataloader, o_train_dataloader, w_train_dataloader)):
 
-        all_data = get_batch_split(b, o, w, args.batch_size)
-        (data, target, domain_target) = all_data
+        (data, target, domain_target) = get_batch_split(b, o, w, args.batch_size)
 
 
         if list(data.size())[0] == args.batch_size :
@@ -132,7 +129,7 @@ def train_encoder_unlearn_threedatasets(args, models, train_loaders, optimizers,
             optimizer.step()
 
             domain_pred = domain_predictor(features.detach())
-            d_loss = calculate_domain_loss(domain_criterion, domain_pred, domain_target)
+            d_loss = domain_criterion(domain_pred, torch.max(domain_target, 1)[1])
             d_loss.backward()
             optimizer_dm.step()
 
@@ -200,12 +197,11 @@ def train_unlearn_threedatasets(args, models, train_loaders, optimizers, criteri
     pred_domains = []
 
     first_batch = True
+    torch.autograd.set_detect_anomaly(True)
 
     batches = 0
     for batch_idx, (b, o, w) in enumerate(zip(b_train_dataloader, o_train_dataloader, w_train_dataloader)):
-        all_data = get_batch_split(b, o, w, args.batch_size)
-
-        (data, target, domain_target) = all_data
+        (data, target, domain_target) = get_batch_split(b, o, w, args.batch_size)
 
         if list(data.size())[0] == args.batch_size :
             batches += 1
@@ -225,23 +221,23 @@ def train_unlearn_threedatasets(args, models, train_loaders, optimizers, criteri
                 logits_prob_all = torch.cat((logits_prob_all, y_pred), 0)
 
             loss = calculate_regression_loss(criteron, y_pred, target)
-            #loss_total = loss
-            # If we retain the graph here the computer runs out of memory
             loss.backward()
             optimizer.step()
 
             # Now update just the domain classifier
             optimizer_dm.zero_grad()
             output_dm = domain_predictor(features.detach())
-            d_loss = calculate_domain_loss(domain_criterion, output_dm, domain_target)
-            loss_dm = args.alpha * d_loss
+            loss_dm = args.alpha * domain_criterion(output_dm, torch.max(domain_target, 1)[1])
             loss_dm.backward()
             optimizer_dm.step()
 
+            # something is going horribly wrong here
             # Now update just the encoder using the domain loss
             optimizer_conf.zero_grad()
-            output_dm_conf = domain_predictor(features.detach())
-            loss_conf = args.beta * conf_criterion(output_dm_conf, domain_target)        # Get rid of the weight for not unsupervised
+            with autocast():
+                features = encoder(data)
+                output_dm_conf = domain_predictor(features)
+                loss_conf = args.beta * conf_criterion(output_dm_conf, domain_target)
             loss_conf.backward()
             optimizer_conf.step()
 
@@ -255,6 +251,7 @@ def train_unlearn_threedatasets(args, models, train_loaders, optimizers, criteri
             pred_domains.append(output_dm_conf)
 
             if batch_idx % args.log_interval == 0:
+                print(batch_idx)
                 print('Train Unlearning Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                     epoch, (batch_idx+1) * len(data), len(b_train_dataloader.dataset),
                            100. * (batch_idx+1) / len(b_train_dataloader), loss.item()), flush=True)
@@ -269,6 +266,7 @@ def train_unlearn_threedatasets(args, models, train_loaders, optimizers, criteri
             del target
             del loss
             del features
+            #del loss_total
             torch.cuda.empty_cache()
 
 
@@ -311,26 +309,23 @@ def val_encoder_unlearn_threedatasets(args, models, val_loaders, criterions):
     with torch.no_grad():
         for batch_idx, (b, o, w) in enumerate(zip(b_val_dataloader, o_val_dataloader, w_val_dataloader)):
 
-            splits, all_data = get_batch_split(b, o, w, args.batch_size)
-            if splits is not None:
-                (n1, n2, n3) = splits
-                (data, target, domain_target) = all_data
+            (data, target, domain_target) = get_batch_split(b, o, w, args.batch_size)
 
-                if list(data.size())[0] == args.batch_size:
-                    batches += 1
-                    features = encoder(data)
-                    output_pred = regressor(features)
-                    domain_pred = domain_predictor(features)
-                    r_loss = calculate_regression_loss(criteron, output_pred, target, n1, n2)
-                    d_loss = calculate_domain_loss(domain_criterion, domain_pred, domain_target)
+            if list(data.size())[0] == args.batch_size:
+                batches += 1
+                features = encoder(data)
+                output_pred = regressor(features)
+                domain_pred = domain_predictor(features)
+                r_loss = calculate_regression_loss(criteron, output_pred, target)
+                d_loss = domain_criterion(domain_pred, torch.max(domain_target, 1)[1])
 
-                    domains = np.argmax(domain_pred.detach().cpu().numpy(), axis=1)
-                    domain_target = np.argmax(domain_target.detach().cpu().numpy(), axis=1)
-                    true_domains.append(domain_target)
-                    pred_domains.append(domains)
+                domains = np.argmax(domain_pred.detach().cpu().numpy(), axis=1)
+                domain_target = np.argmax(domain_target.detach().cpu().numpy(), axis=1)
+                true_domains.append(domain_target)
+                pred_domains.append(domains)
 
-                    regressor_loss += r_loss
-                    domain_loss += d_loss
+                regressor_loss += r_loss
+                domain_loss += d_loss
 
     val_loss = regressor_loss / batches
     dom_loss = domain_loss / batches
@@ -365,8 +360,7 @@ def val_unlearn_threedatasets(args, models, val_loaders, criterions):
     with torch.no_grad():
         for batch_idx, (b, o, w) in enumerate(zip(b_val_dataloader, o_val_dataloader, w_val_dataloader)):
 
-            all_data = get_batch_split(b, o, w, args.batch_size)
-            (data, target, domain_target) = all_data
+            (data, target, domain_target) = get_batch_split(b, o, w, args.batch_size)
 
             if list(data.size())[0] == args.batch_size:
                 batches += 1

@@ -7,8 +7,7 @@ import torch.nn as nn
 from losses.confusion_loss import confusion_loss
 import torch.optim as optim
 import numpy as np
-from ecg_train_utils import train_unlearn_threedatasets, val_unlearn_threedatasets, train_encoder_unlearn_threedatasets
-from ecg_train_utils_no_unlearning import train_only, val_only
+from ecg_train_utils import train_unlearn_threedatasets, val_unlearn_threedatasets, train_encoder_unlearn_threedatasets, val_encoder_unlearn_threedatasets
 import sys
 
 
@@ -32,36 +31,37 @@ if __name__ == "__main__":
         print('Cuda Available', flush=True)
 
     args = Args()
-    args.batch_size = 3
+    args.batch_size = 18
     args.domain_count = 3
     args.learning_rate = 1e-4
     args.patience = 50
-    args.epochs = 25
+    args.epochs = 50
     args.epoch_reached = 1
-    args.epoch_stage_1 = 20
+    args.epoch_stage_1 = 30
     args.log_interval = 100
     args.alpha = 1
-    args.beta = 0.1
+    args.beta = 10
 
     # load data
-    clean_train_path = 'data_splits/cpsc_clean_train.csv'
-    clean_val_path = 'data_splits/cpsc_clean_val.csv'
+    clean_train_path = 'data_splits/train_cpsc_xl.csv'
+    clean_val_path = 'data_splits/val_cpsc_xl.csv'
     clean_train_dataset, clean_val_dataset = ecg_utils.load_data(clean_train_path, clean_val_path, args.domain_count, 0)
 
-    gaus_train_path = 'data_splits/cpsc_gaus_train.csv'
-    gaus_val_path = 'data_splits/cpsc_gaus_val.csv'
+    gaus_train_path = 'data_splits/train_georgia.csv'
+    gaus_val_path = 'data_splits/val_georgia.csv'
     gaus_train_dataset, gaus_val_dataset = ecg_utils.load_data(gaus_train_path, gaus_val_path, args.domain_count, 1)
 
-    sin_train_path = 'data_splits/cpsc_sin_train.csv'
-    sin_val_path = 'data_splits/cpsc_sin_val.csv'
+    sin_train_path = 'data_splits/train_ptb_xl.csv'
+    sin_val_path = 'data_splits/val_ptb_xl.csv'
     sin_train_dataset, sin_val_dataset = ecg_utils.load_data(sin_train_path, sin_val_path, args.domain_count, 2)
 
-    c_train_dataloader = DataLoader(clean_train_dataset, batch_size=1, shuffle=True, num_workers=0)
-    c_val_dataloader = DataLoader(clean_val_dataset, batch_size=1, shuffle=True, num_workers=0)
-    g_train_dataloader = DataLoader(gaus_train_dataset, batch_size=1, shuffle=True, num_workers=0)
-    g_val_dataloader = DataLoader(gaus_val_dataset, batch_size=1, shuffle=True, num_workers=0)
-    s_train_dataloader = DataLoader(sin_train_dataset, batch_size=1, shuffle=True, num_workers=0)
-    s_val_dataloader = DataLoader(sin_val_dataset, batch_size=1, shuffle=True, num_workers=0)
+    dataloader_batchsize = int(args.batch_size/args.domain_count)
+    c_train_dataloader = DataLoader(clean_train_dataset, batch_size=dataloader_batchsize, shuffle=True, num_workers=0)
+    c_val_dataloader = DataLoader(clean_val_dataset, batch_size=dataloader_batchsize, shuffle=True, num_workers=0)
+    g_train_dataloader = DataLoader(gaus_train_dataset, batch_size=dataloader_batchsize, shuffle=True, num_workers=0)
+    g_val_dataloader = DataLoader(gaus_val_dataset, batch_size=dataloader_batchsize, shuffle=True, num_workers=0)
+    s_train_dataloader = DataLoader(sin_train_dataset, batch_size=dataloader_batchsize, shuffle=True, num_workers=0)
+    s_val_dataloader = DataLoader(sin_val_dataset, batch_size=dataloader_batchsize, shuffle=True, num_workers=0)
 
     # Load the model
     encoder = Encoder()
@@ -87,7 +87,7 @@ if __name__ == "__main__":
 
     optimizer = optim.Adam(list(encoder.parameters()) + list(regressor.parameters()), lr=1e-4)
     optimizer_conf = optim.Adam(list(encoder.parameters()), lr=1e-4)
-    optimizer_dm = optim.Adam(list(domain_predictor.parameters()), lr=1e-4)
+    optimizer_dm = optim.Adam(list(domain_predictor.parameters()), lr=1e-7)
 
     # Initalise the early stopping
     early_stopping = EarlyStopping_unlearning(args.patience, verbose=False)
@@ -108,7 +108,7 @@ if __name__ == "__main__":
                                                                                 optimizers, criterions, epoch)
             #loss = train_only(args, [encoder, regressor], train_dataloaders, optimizers, [criteron], epoch)
             torch.cuda.empty_cache()  # Clear memory cache
-            val_loss = val_only(args, [encoder, regressor], val_dataloaders, [criteron])
+            val_loss = val_encoder_unlearn_threedatasets(args, models, val_dataloaders, criterions)
             #loss_store.append([loss, val_loss, acc, val_acc, dm_loss, conf_loss])
 
             #np.save(LOSS_PATH, np.array(loss_store))
@@ -119,15 +119,12 @@ if __name__ == "__main__":
                 torch.save(domain_predictor.state_dict(), PRE_TRAIN_DOMAIN)
 
         else:
-            optimizer = optim.Adam(list(encoder.parameters()) + list(regressor.parameters()), lr=1e-6)
-            optimizer_conf = optim.Adam(list(encoder.parameters()), lr=1e-6)
-            optimizer_dm = optim.Adam(list(domain_predictor.parameters()), lr=1e-6)
-            optimizers = [optimizer, optimizer_conf, optimizer_dm]
-
             print('Unlearning')
             print('Epoch ', epoch, '/', args.epochs, flush=True)
 
-            val_loss, val_acc = val_unlearn_threedatasets(args, models, val_dataloaders, criterions)
+            if epoch == args.epoch_stage_1:
+                print("Validation before unlearning:")
+                val_loss, val_acc = val_unlearn_threedatasets(args, models, val_dataloaders, criterions)
 
             loss, acc, dm_loss, conf_loss = train_unlearn_threedatasets(args, models, train_dataloaders, optimizers,
                                                                         criterions, epoch)
