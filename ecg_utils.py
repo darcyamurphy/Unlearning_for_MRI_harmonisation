@@ -2,9 +2,15 @@ import numpy as np
 import pandas as pd
 import random
 from datasets.ecg_dataset import SimpleDataset
-
+from config import constants
 
 seq_len = 4096
+
+
+def load_test_data(test_csv, domain_count, domain_id):
+    test_pd = drop_equivalent_classes(pd.read_csv(test_csv))
+    test_dataset = build_dataset(test_pd, Compose([ValClip(len=seq_len), Normalize('none'), Retype()]), domain_count, domain_id)
+    return test_dataset
 
 
 def load_data(train_csv, val_csv, domain_count, domain_id):
@@ -29,9 +35,8 @@ def build_dataset(annotations, transforms, domain_count, domain_id):
 
 def drop_equivalent_classes(data):
     # Deal with three equivalent pairs
-    equivalent_classes = [['713427006', '59118001'], ['284470004', '63593006'], ['427172004', '17338001']]
     droplist = []
-    for pair in equivalent_classes:
+    for pair in constants.equivalent_classes:
         data[pair[0]] = data[pair[0]].combine(data[pair[1]], np.maximum)
         droplist.append(pair[1])
     data = data.drop(columns=droplist, axis=1)

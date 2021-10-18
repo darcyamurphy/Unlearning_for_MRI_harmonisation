@@ -19,16 +19,9 @@ class Encoder(nn.Module):
 class Regressor(nn.Module):
     def __init__(self):
         super(Regressor, self).__init__()
-
-        #self.regressor = nn.Sequential()
-        #self.regressor.add_module('r_fc2', nn.Linear(feature_dimension, 32))
-        #self.regressor.add_module('r_relu2', nn.ReLU(True))
-        #self.regressor.add_module('r_pred', nn.Linear(32, prediction_classes))
-        #self.regressor.add_module('sigmoid', nn.Sigmoid())
         self.fc = nn.Linear(feature_dimension, 24)
 
     def forward(self, x):
-        #regression = self.regressor(x)
         regression = self.fc(x)
         return regression
 

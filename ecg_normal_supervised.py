@@ -7,22 +7,9 @@ import torch.nn as nn
 from losses.confusion_loss import confusion_loss
 import torch.optim as optim
 import numpy as np
-from ecg_train_utils import train_unlearn_threedatasets, val_unlearn_threedatasets, train_encoder_unlearn_threedatasets, val_encoder_unlearn_threedatasets
+from ecg_train_utils import train_unlearn_threedatasets, val_unlearn_threedatasets, train_encoder_unlearn_threedatasets
 import sys
-
-
-LOSS_PATH = 'loss_pth'
-PRE_TRAIN_ENCODER = 'pretrain_encoder'
-PRE_TRAIN_REGRESSOR = 'pretrain_regressor'
-PRE_TRAIN_DOMAIN = 'pretrain_domain'
-
-PATH_ENCODER = 'encoder_pth'
-PATH_REGRESSOR = 'regressor_pth'
-PATH_DOMAIN = 'domain_pth'
-
-CHK_PATH_ENCODER = 'encoder_chk_pth'
-CHK_PATH_REGRESSOR = 'regressor_chk_pth'
-CHK_PATH_DOMAIN = 'domain_chk_pth'
+from config.constants import *
 
 
 if __name__ == "__main__":
@@ -35,33 +22,25 @@ if __name__ == "__main__":
     args.domain_count = 3
     args.learning_rate = 1e-4
     args.patience = 50
-    args.epochs = 50
+    args.epochs = 3
     args.epoch_reached = 1
-    args.epoch_stage_1 = 30
+    args.epoch_stage_1 = 2
     args.log_interval = 100
     args.alpha = 1
     args.beta = 10
 
     # load data
-    clean_train_path = 'data_splits/train_cpsc_xl.csv'
-    clean_val_path = 'data_splits/val_cpsc_xl.csv'
-    clean_train_dataset, clean_val_dataset = ecg_utils.load_data(clean_train_path, clean_val_path, args.domain_count, 0)
-
-    gaus_train_path = 'data_splits/train_georgia.csv'
-    gaus_val_path = 'data_splits/val_georgia.csv'
-    gaus_train_dataset, gaus_val_dataset = ecg_utils.load_data(gaus_train_path, gaus_val_path, args.domain_count, 1)
-
-    sin_train_path = 'data_splits/train_ptb_xl.csv'
-    sin_val_path = 'data_splits/val_ptb_xl.csv'
-    sin_train_dataset, sin_val_dataset = ecg_utils.load_data(sin_train_path, sin_val_path, args.domain_count, 2)
+    train_dataset_a, val_dataset_a = ecg_utils.load_data(DOMAIN_A_TRAIN_PATH, DOMAIN_A_VAL_PATH, args.domain_count, 0)
+    train_dataset_b, val_dataset_b = ecg_utils.load_data(DOMAIN_B_TRAIN_PATH, DOMAIN_B_VAL_PATH, args.domain_count, 1)
+    train_dataset_c, val_dataset_c = ecg_utils.load_data(DOMAIN_C_TRAIN_PATH, DOMAIN_C_VAL_PATH, args.domain_count, 2)
 
     dataloader_batchsize = int(args.batch_size/args.domain_count)
-    c_train_dataloader = DataLoader(clean_train_dataset, batch_size=dataloader_batchsize, shuffle=True, num_workers=0)
-    c_val_dataloader = DataLoader(clean_val_dataset, batch_size=dataloader_batchsize, shuffle=True, num_workers=0)
-    g_train_dataloader = DataLoader(gaus_train_dataset, batch_size=dataloader_batchsize, shuffle=True, num_workers=0)
-    g_val_dataloader = DataLoader(gaus_val_dataset, batch_size=dataloader_batchsize, shuffle=True, num_workers=0)
-    s_train_dataloader = DataLoader(sin_train_dataset, batch_size=dataloader_batchsize, shuffle=True, num_workers=0)
-    s_val_dataloader = DataLoader(sin_val_dataset, batch_size=dataloader_batchsize, shuffle=True, num_workers=0)
+    c_train_dataloader = DataLoader(train_dataset_a, batch_size=dataloader_batchsize, shuffle=True, num_workers=0)
+    c_val_dataloader = DataLoader(val_dataset_a, batch_size=dataloader_batchsize, shuffle=True, num_workers=0)
+    g_train_dataloader = DataLoader(train_dataset_b, batch_size=dataloader_batchsize, shuffle=True, num_workers=0)
+    g_val_dataloader = DataLoader(val_dataset_b, batch_size=dataloader_batchsize, shuffle=True, num_workers=0)
+    s_train_dataloader = DataLoader(train_dataset_c, batch_size=dataloader_batchsize, shuffle=True, num_workers=0)
+    s_val_dataloader = DataLoader(val_dataset_c, batch_size=dataloader_batchsize, shuffle=True, num_workers=0)
 
     # Load the model
     encoder = Encoder()
@@ -81,9 +60,6 @@ if __name__ == "__main__":
         criteron = criteron.cuda()
         domain_criterion = domain_criterion.cuda()
         conf_criterion = conf_criterion.cuda()
-
-    #optimizer_step1 = optim.Adam(list(encoder.parameters()) + list(regressor.parameters()) +
-    #                             list(domain_predictor.parameters()), lr=args.learning_rate)
 
     optimizer = optim.Adam(list(encoder.parameters()) + list(regressor.parameters()), lr=1e-4)
     optimizer_conf = optim.Adam(list(encoder.parameters()), lr=1e-4)
@@ -106,12 +82,11 @@ if __name__ == "__main__":
             print('Epoch ', epoch, '/', args.epochs, flush=True)
             loss, acc, dm_loss, conf_loss = train_encoder_unlearn_threedatasets(args, models, train_dataloaders,
                                                                                 optimizers, criterions, epoch)
-            #loss = train_only(args, [encoder, regressor], train_dataloaders, optimizers, [criteron], epoch)
             torch.cuda.empty_cache()  # Clear memory cache
-            val_loss = val_encoder_unlearn_threedatasets(args, models, val_dataloaders, criterions)
-            #loss_store.append([loss, val_loss, acc, val_acc, dm_loss, conf_loss])
+            val_loss, val_acc = val_unlearn_threedatasets(args, models, val_dataloaders, criterions)
+            loss_store.append([loss, val_loss, acc, val_acc, dm_loss, conf_loss])
 
-            #np.save(LOSS_PATH, np.array(loss_store))
+            np.save(LOSS_PATH, np.array(loss_store))
 
             if epoch == args.epoch_stage_1 - 1:
                 torch.save(encoder.state_dict(), PRE_TRAIN_ENCODER)

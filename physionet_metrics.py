@@ -1,10 +1,11 @@
 import numpy as np
 import pandas as pd
 import torch
+from config import constants
 
 
 # 计算F1score
-def calc_accuracy(y_true, y_pre, config_files, threshold=0.5):
+def calc_accuracy(y_true, y_pre, threshold=0.5):
     y_true = y_true.cpu().detach().numpy().astype(np.int)
 
     y_label = np.zeros(y_true.shape)
@@ -22,17 +23,13 @@ def calc_accuracy(y_true, y_pre, config_files, threshold=0.5):
     labels = y_true
     binary_outputs = y_label
 
-    # Define the weights, the SNOMED CT code for the normal class, and equivalent SNOMED CT codes.
-    weights_file = config_files + '/weights.csv'
-    normal_class = '426783006'
-
     # Get the label
-    label_file_dir = config_files + '/dx_mapping_scored.csv'
-    label_file = pd.read_csv(label_file_dir)
-    equivalent_classes = ['59118001', '63593006', '17338001']
-    classes = sorted(list(set([str(name) for name in label_file['SNOMED CT Code']]) - set(equivalent_classes)))
 
-    weights = load_weights(weights_file, classes)
+    label_file = pd.read_csv(constants.label_file_dir)
+
+    classes = sorted(list(set([str(name) for name in label_file['SNOMED CT Code']]) - set(constants.drop_classes)))
+
+    weights = load_weights(constants.weights_file, classes)
 
     # Only consider classes that are scored with the Challenge metric.
     indices = np.any(weights, axis=0)  # Find indices of classes in weight matrix.
@@ -41,7 +38,7 @@ def calc_accuracy(y_true, y_pre, config_files, threshold=0.5):
     binary_outputs = binary_outputs[:, indices]
     weights = weights[np.ix_(indices, indices)]
 
-    challenge_metric = compute_challenge_metric(weights, labels, binary_outputs, classes, normal_class)
+    challenge_metric = compute_challenge_metric(weights, labels, binary_outputs, classes, constants.normal_class)
 
     # Return the results.
     return challenge_metric
