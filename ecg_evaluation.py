@@ -1,6 +1,8 @@
 from models.ecg_predictor import DomainPredictor, Regressor, Encoder
 from utils import Args
-import ecg_utils, ecg_train_utils, physionet_metrics
+import ecg_utils
+import ecg_train_utils
+import physionet_metrics
 from config import constants
 import torch
 from torch.utils.data import DataLoader
@@ -9,7 +11,7 @@ from torch.autograd import Variable
 import numpy as np
 
 
-def test_main_and_domain_tasks(encoder, regressor, domain_predictor, dataset):
+def test_main_and_domain_tasks(encoder, regressor, domain_predictor, dataset, dataset_name=None):
     encoder.eval()
     regressor.eval()
     domain_predictor.eval()
@@ -33,7 +35,6 @@ def test_main_and_domain_tasks(encoder, regressor, domain_predictor, dataset):
                 logits_prob_all = y_pred
                 true_domains = domain_true
                 pred_domains = domain_pred
-                # keep track of file names in here too?
             else:
                 labels_all = torch.cat((labels_all, y_true), 0)
                 logits_prob_all = torch.cat((logits_prob_all, y_pred), 0)
@@ -47,13 +48,16 @@ def test_main_and_domain_tasks(encoder, regressor, domain_predictor, dataset):
     pred_domains = np.argmax(pred_domains.detach().cpu().numpy(), axis=1)
     domain_accuracy = ecg_train_utils.accuracy_score(true_domains, pred_domains)
 
-    print('True positive rate: {:.4f}\n'.format(tp_rate))
-    print('Challenge metric: {:.4f}\n'.format(challenge_metric))
+    print('True positive rate: {:.4f}'.format(tp_rate))
+    print('Challenge metric: {:.4f}'.format(challenge_metric))
     print('Domain accuracy: {:.4f}\n'.format(domain_accuracy))
+
+    if dataset_name is not None:
+        # use csv file name for linking back to source data if needed
+        np.savez(constants.results_filepath_template.format(dataset_name), y_true=labels_all, y_pred=logits_prob_all,
+                 domain_true=true_domains, domain_pred=pred_domains)
     # give accuracy, challenge metric, other scores e.g. sensitivity and specificity
     # want more data on which domain it predicted each example as - break down by class, age, gender etc?
-    # ideally save predictions by filename so can link back to full data
-    # save predictions for each item based on file name?
 
 
 if __name__ == "__main__":
@@ -90,8 +94,8 @@ if __name__ == "__main__":
     ptb_test = ecg_utils.load_test_data(constants.PTB_TEST, args.domain_count, 2)
     ptb_test_dataloader = DataLoader(ptb_test, batch_size=dataloader_batchsize, shuffle=False, num_workers=0)
     print("Test CPSC data\n")
-    test_main_and_domain_tasks(encoder, regressor, domain_predictor, cpsc_test_dataloader)
+    test_main_and_domain_tasks(encoder, regressor, domain_predictor, cpsc_test_dataloader, constants.CPSC_TEST)
     print("\nTest Georgia data\n")
-    test_main_and_domain_tasks(encoder, regressor, domain_predictor, georgia_test_dataloader)
+    test_main_and_domain_tasks(encoder, regressor, domain_predictor, georgia_test_dataloader, constants.GEORGIA_TEST)
     print("\nTest PTB data\n")
-    test_main_and_domain_tasks(encoder, regressor, domain_predictor, ptb_test_dataloader)
+    test_main_and_domain_tasks(encoder, regressor, domain_predictor, ptb_test_dataloader, constants.PTB_TEST)

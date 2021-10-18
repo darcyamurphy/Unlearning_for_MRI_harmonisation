@@ -19,7 +19,6 @@ if __name__ == "__main__":
 
     args = Args()
     args.batch_size = 18
-    args.domain_count = 3
     args.learning_rate = 1e-4
     args.patience = 50
     args.epochs = 3
@@ -30,22 +29,22 @@ if __name__ == "__main__":
     args.beta = 10
 
     # load data
-    train_dataset_a, val_dataset_a = ecg_utils.load_data(DOMAIN_A_TRAIN_PATH, DOMAIN_A_VAL_PATH, args.domain_count, 0)
-    train_dataset_b, val_dataset_b = ecg_utils.load_data(DOMAIN_B_TRAIN_PATH, DOMAIN_B_VAL_PATH, args.domain_count, 1)
-    train_dataset_c, val_dataset_c = ecg_utils.load_data(DOMAIN_C_TRAIN_PATH, DOMAIN_C_VAL_PATH, args.domain_count, 2)
+    train_datasets, val_datasets = ecg_utils.load_unbalanced_data([DOMAIN_A_TRAIN_PATH, DOMAIN_B_TRAIN_PATH, DOMAIN_C_TRAIN_PATH],
+                                                                  [DOMAIN_A_VAL_PATH, DOMAIN_B_VAL_PATH, DOMAIN_C_VAL_PATH])
 
-    dataloader_batchsize = int(args.batch_size/args.domain_count)
-    c_train_dataloader = DataLoader(train_dataset_a, batch_size=dataloader_batchsize, shuffle=True, num_workers=0)
-    c_val_dataloader = DataLoader(val_dataset_a, batch_size=dataloader_batchsize, shuffle=True, num_workers=0)
-    g_train_dataloader = DataLoader(train_dataset_b, batch_size=dataloader_batchsize, shuffle=True, num_workers=0)
-    g_val_dataloader = DataLoader(val_dataset_b, batch_size=dataloader_batchsize, shuffle=True, num_workers=0)
-    s_train_dataloader = DataLoader(train_dataset_c, batch_size=dataloader_batchsize, shuffle=True, num_workers=0)
-    s_val_dataloader = DataLoader(val_dataset_c, batch_size=dataloader_batchsize, shuffle=True, num_workers=0)
+    train_dataloaders = []
+    val_dataloaders = []
+    dataloader_batchsize = int(args.batch_size/len(train_datasets))
+    for i in range(len(train_datasets)):
+        train_dataloader = DataLoader(train_datasets[i], batch_size=dataloader_batchsize, shuffle=True, num_workers=0)
+        val_dataloader = DataLoader(val_datasets[i], batch_size=dataloader_batchsize, shuffle=True, num_workers=0)
+        train_dataloaders.append(train_dataloader)
+        val_dataloaders.append(val_dataloader)
 
     # Load the model
     encoder = Encoder()
     regressor = Regressor()
-    domain_predictor = DomainPredictor(nodes=args.domain_count)
+    domain_predictor = DomainPredictor(nodes=len(train_datasets))
 
     if cuda:
         encoder = encoder.cuda()
@@ -72,8 +71,6 @@ if __name__ == "__main__":
 
     models = [encoder, regressor, domain_predictor]
     optimizers = [optimizer, optimizer_conf, optimizer_dm]
-    train_dataloaders = [c_train_dataloader, g_train_dataloader, s_train_dataloader]
-    val_dataloaders = [c_val_dataloader, g_val_dataloader, s_val_dataloader]
     criterions = [criteron, conf_criterion, domain_criterion]
 
     for epoch in range(args.epoch_reached, args.epochs + 1):

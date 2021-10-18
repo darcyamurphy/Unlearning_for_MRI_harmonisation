@@ -58,7 +58,6 @@ def resample(input_signal, src_fs, tar_fs):
 
 # implementation of pytorch map-style dataset
 class SimpleDataset(Dataset):
-
     def __init__(self, labels, data, age, gender, fs, domain, transform=None, loader=load_data):
         self.data = data
         self.multi_labels = [labels[i, :] for i in range(labels.shape[0])]
@@ -83,3 +82,18 @@ class SimpleDataset(Dataset):
         img = self.transforms(img)
         domain = self.domain[item]
         return img, torch.from_numpy(label).float(), torch.from_numpy(domain).long()
+
+
+# class for faking a dataset to be longer than it is to make training on mismatched datasets easier
+class LoopingDataset(SimpleDataset):
+    def __init__(self, labels, data, age, gender, fs, domain, max_length, transform=None, loader=load_data):
+        SimpleDataset.__init__(self, labels, data, age, gender, fs, domain, transform=transform, loader=loader)
+        assert max_length >= len(data), "expected data at least {}, but was {}".format(max_length, len(data))
+        self.max_length = max_length
+
+    def __len__(self):
+        return self.max_length
+
+    def __getitem__(self, item):
+        # when we try to retrieve an item that's past the true end of the dataset length, wrap back around
+        return SimpleDataset.__getitem__(self, item % len(self.data))

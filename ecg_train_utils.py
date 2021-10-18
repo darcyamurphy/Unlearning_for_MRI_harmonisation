@@ -77,58 +77,60 @@ def train_encoder_unlearn_threedatasets(args, models, train_loaders, optimizers,
 
         (data, target, domain_target) = combine_datasets(b, o, w)
 
+        if not list(data.size())[0] == args.batch_size:
+            continue
 
-        if list(data.size())[0] == args.batch_size :
-            batches += 1
+        batches += 1
 
-            # First update the encoder and regressor
-            optimizer.zero_grad()
-            features = encoder(data)
-            output_pred = regressor(features)
-            y_pred = sigmoid(output_pred)
-            r_loss = criteron(y_pred, target)
+        # First update the encoder and regressor
+        optimizer.zero_grad()
+        features = encoder(data)
+        output_pred = regressor(features)
+        y_pred = sigmoid(output_pred)
+        r_loss = criteron(y_pred, target)
 
-            if batch_idx == 0:
-                labels_all = target
-                logits_prob_all = y_pred
-            else:
-                labels_all = torch.cat((labels_all, target), 0)
-                logits_prob_all = torch.cat((logits_prob_all, y_pred), 0)
+        if batch_idx == 0:
+            labels_all = target
+            logits_prob_all = y_pred
+        else:
+            labels_all = torch.cat((labels_all, target), 0)
+            logits_prob_all = torch.cat((logits_prob_all, y_pred), 0)
 
-            regressor_loss += r_loss * data.size(0)
-            r_loss.backward()
-            optimizer.step()
+        regressor_loss += r_loss * data.size(0)
+        r_loss.backward()
+        optimizer.step()
 
-            domain_pred = domain_predictor(features.detach())
-            d_loss = domain_criterion(domain_pred, torch.max(domain_target, 1)[1])
-            d_loss.backward()
-            optimizer_dm.step()
+        domain_pred = domain_predictor(features.detach())
+        d_loss = domain_criterion(domain_pred, torch.max(domain_target, 1)[1])
+        d_loss.backward()
+        optimizer_dm.step()
 
-            regressor_loss += r_loss
-            domain_loss += d_loss
+        regressor_loss += r_loss
+        domain_loss += d_loss
 
-            domains = np.argmax(domain_pred.detach().cpu().numpy(), axis=1)
-            domain_target = np.argmax(domain_target.detach().cpu().numpy(), axis=1)
-            true_domains.append(domain_target)
-            pred_domains.append(domains)
+        domains = np.argmax(domain_pred.detach().cpu().numpy(), axis=1)
+        domain_target = np.argmax(domain_target.detach().cpu().numpy(), axis=1)
+        true_domains.append(domain_target)
+        pred_domains.append(domains)
 
 
-            if batch_idx % args.log_interval == 0:
-                tp_rate = true_positive_rate(labels_all, logits_prob_all)
-                challenge_metric = physionet_metrics.calc_accuracy(labels_all, logits_prob_all)
-                total_length = len(b_train_dataloader.dataset)*3
-                print('Train Epoch: {} [{}/{} ({:.0f}%)]'.format(
-                    epoch, (batch_idx+1) * len(data), total_length,
-                           100. * (batch_idx+1) / len(b_train_dataloader.dataset)))
-                print('\t Regressor Loss: {:.4f}'.format(r_loss))
-                print('\t Domain Loss: {:.4f}'.format(d_loss))
-                print('\t True positive rate: {:.4f}'.format(tp_rate))
-                print('\t Challenge Metric: {:.4f}'.format(challenge_metric))
+        if batch_idx % args.log_interval == 0:
+            tp_rate = true_positive_rate(labels_all, logits_prob_all)
+            challenge_metric = physionet_metrics.calc_accuracy(labels_all, logits_prob_all)
+            total_length = len(b_train_dataloader.dataset) * 3
+            total_examples = (batch_idx + 1) * len(data)
+            completion_percentage = 100. * total_examples / total_length
+            print('Train Epoch: {} [{}/{} ({:.0f}%)]'.format(
+                epoch, total_examples, total_length, completion_percentage))
+            print('\t Regressor Loss: {:.4f}'.format(r_loss))
+            print('\t Domain Loss: {:.4f}'.format(d_loss))
+            print('\t True positive rate: {:.4f}'.format(tp_rate))
+            print('\t Challenge Metric: {:.4f}'.format(challenge_metric))
 
-            del target
-            del r_loss
-            del d_loss
-            del features
+        del target
+        del r_loss
+        del d_loss
+        del features
 
     av_loss = regressor_loss / batches
     av_dom_loss = domain_loss / batches
@@ -168,70 +170,72 @@ def train_unlearn_threedatasets(args, models, train_loaders, optimizers, criteri
     for batch_idx, (b, o, w) in enumerate(zip(b_train_dataloader, o_train_dataloader, w_train_dataloader)):
         (data, target, domain_target) = combine_datasets(b, o, w)
 
-        if list(data.size())[0] == args.batch_size :
-            batches += 1
+        if not list(data.size())[0] == args.batch_size:
+            continue
+        batches += 1
 
-            # First update the encoder and regressor
-            optimizer.zero_grad()
+        # First update the encoder and regressor
+        optimizer.zero_grad()
+        features = encoder(data)
+        output_pred = regressor(features)
+        y_pred = sigmoid(output_pred)
+
+        if first_batch:
+            first_batch = False
+            labels_all = target
+            logits_prob_all = y_pred
+        else:
+            labels_all = torch.cat((labels_all, target), 0)
+            logits_prob_all = torch.cat((logits_prob_all, y_pred), 0)
+
+        loss = criteron(y_pred, target)
+        loss.backward()
+        optimizer.step()
+
+        # Now update just the domain classifier
+        optimizer_dm.zero_grad()
+        output_dm = domain_predictor(features.detach())
+        loss_dm = args.alpha * domain_criterion(output_dm, torch.max(domain_target, 1)[1])
+        loss_dm.backward()
+        optimizer_dm.step()
+
+        # something is going horribly wrong here
+        # Now update just the encoder using the domain loss
+        optimizer_conf.zero_grad()
+        with autocast():
             features = encoder(data)
-            output_pred = regressor(features)
-            y_pred = sigmoid(output_pred)
+            output_dm_conf = domain_predictor(features)
+            loss_conf = args.beta * conf_criterion(output_dm_conf, domain_target)
+        loss_conf.backward()
+        optimizer_conf.step()
 
-            if first_batch:
-                first_batch = False
-                labels_all = target
-                logits_prob_all = y_pred
-            else:
-                labels_all = torch.cat((labels_all, target), 0)
-                logits_prob_all = torch.cat((logits_prob_all, y_pred), 0)
+        regressor_loss += loss
+        domain_loss += loss_dm
+        conf_loss += loss_conf
 
-            loss = criteron(y_pred, target)
-            loss.backward()
-            optimizer.step()
+        output_dm_conf = np.argmax(output_dm_conf.detach().cpu().numpy(), axis=1)
+        domain_target = np.argmax(domain_target.detach().cpu().numpy(), axis=1)
+        true_domains.append(domain_target)
+        pred_domains.append(output_dm_conf)
 
-            # Now update just the domain classifier
-            optimizer_dm.zero_grad()
-            output_dm = domain_predictor(features.detach())
-            loss_dm = args.alpha * domain_criterion(output_dm, torch.max(domain_target, 1)[1])
-            loss_dm.backward()
-            optimizer_dm.step()
+        if batch_idx % args.log_interval == 0:
+            total_length = len(b_train_dataloader.dataset) * 3
+            total_examples = (batch_idx + 1) * len(data)
+            completion_percentage = 100. * total_examples / total_length
+            print('Train Unlearning Epoch: {} [{}/{} ({:.0f}%)]'.format(
+                epoch, total_examples, total_length, completion_percentage))
+            tp_rate = true_positive_rate(labels_all, logits_prob_all)
+            challenge_metric = physionet_metrics.calc_accuracy(labels_all, logits_prob_all)
+            print('\t Confusion loss = ', loss_conf.item())
+            print('\t Domain Loss = ', loss_dm.item())
+            print('\t Regressor Loss: {:.4f}'.format(regressor_loss/batches))
+            print('\t True positive rate: {:.4f}'.format(tp_rate))
+            print('\t Challenge Metric: {:.4f}'.format(challenge_metric))
 
-            # something is going horribly wrong here
-            # Now update just the encoder using the domain loss
-            optimizer_conf.zero_grad()
-            with autocast():
-                features = encoder(data)
-                output_dm_conf = domain_predictor(features)
-                loss_conf = args.beta * conf_criterion(output_dm_conf, domain_target)
-            loss_conf.backward()
-            optimizer_conf.step()
-
-            regressor_loss += loss
-            domain_loss += loss_dm
-            conf_loss += loss_conf
-
-            output_dm_conf = np.argmax(output_dm_conf.detach().cpu().numpy(), axis=1)
-            domain_target = np.argmax(domain_target.detach().cpu().numpy(), axis=1)
-            true_domains.append(domain_target)
-            pred_domains.append(output_dm_conf)
-
-            if batch_idx % args.log_interval == 0:
-                total_length = len(b_train_dataloader.dataset)*3
-                print('Train Unlearning Epoch: {} [{}/{} ({:.0f}%)]'.format(
-                    epoch, (batch_idx+1) * len(data), total_length,
-                           100. * (batch_idx+1) / len(b_train_dataloader.dataset)))
-                tp_rate = true_positive_rate(labels_all, logits_prob_all)
-                challenge_metric = physionet_metrics.calc_accuracy(labels_all, logits_prob_all)
-                print('\t Confusion loss = ', loss_conf.item())
-                print('\t Domain Loss = ', loss_dm.item())
-                print('\t Regressor Loss: {:.4f}'.format(regressor_loss/batches))
-                print('\t True positive rate: {:.4f}'.format(tp_rate))
-                print('\t Challenge Metric: {:.4f}'.format(challenge_metric))
-
-            del target
-            del loss
-            del features
-            torch.cuda.empty_cache()
+        del target
+        del loss
+        del features
+        torch.cuda.empty_cache()
 
     av_loss = regressor_loss / batches
     av_conf = conf_loss / batches
@@ -270,33 +274,34 @@ def val_unlearn_threedatasets(args, models, val_loaders, criterions):
 
             (data, target, domain_target) = combine_datasets(b, o, w)
 
-            if list(data.size())[0] == args.batch_size:
-                batches += 1
-                features = encoder(data)
-                output_pred = regressor(features)
-                y_pred = sigmoid(output_pred)
+            if not list(data.size())[0] == args.batch_size:
+                continue
+            batches += 1
+            features = encoder(data)
+            output_pred = regressor(features)
+            y_pred = sigmoid(output_pred)
 
-                if batches == 1:
-                    labels_all = target
-                    logits_prob_all = y_pred
-                else:
-                    labels_all = torch.cat((labels_all, target), 0)
-                    logits_prob_all = torch.cat((logits_prob_all, y_pred), 0)
+            if batches == 1:
+                labels_all = target
+                logits_prob_all = y_pred
+            else:
+                labels_all = torch.cat((labels_all, target), 0)
+                logits_prob_all = torch.cat((logits_prob_all, y_pred), 0)
 
-                loss = criteron(y_pred, target)
-                regressor_loss += loss
+            loss = criteron(y_pred, target)
+            regressor_loss += loss
 
-                domain_pred = domain_predictor.forward(features)
-                d_loss = domain_criterion(domain_pred, torch.max(domain_target, 1)[1])
-                domain_pred = np.argmax(domain_pred.detach().cpu().numpy(), axis=1)
-                domain_loss += d_loss
+            domain_pred = domain_predictor.forward(features)
+            d_loss = domain_criterion(domain_pred, torch.max(domain_target, 1)[1])
+            domain_pred = np.argmax(domain_pred.detach().cpu().numpy(), axis=1)
+            domain_loss += d_loss
 
-                # sometimes domain target is a tensor and sometimes it's already an ndarray and i don't know why!
-                if not isinstance(domain_target, np.ndarray):
-                    domain_target = np.argmax(domain_target.detach().cpu().numpy(), axis=1)
+            # sometimes domain target is a tensor and sometimes it's already an ndarray and i don't know why!
+            if not isinstance(domain_target, np.ndarray):
+                domain_target = np.argmax(domain_target.detach().cpu().numpy(), axis=1)
 
-                true_domains.append(domain_target)
-                pred_domains.append(domain_pred)
+            true_domains.append(domain_target)
+            pred_domains.append(domain_pred)
 
     avg_regressor_loss = regressor_loss / batches
     avg_domain_loss = domain_loss / batches
