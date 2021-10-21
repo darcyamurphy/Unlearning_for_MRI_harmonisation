@@ -1,8 +1,8 @@
 # paths for saving training output including trained models
 LOSS_PATH = 'save_models/loss_pth'
-PRE_TRAIN_ENCODER = 'save_models/pretrain_encoder'
-PRE_TRAIN_REGRESSOR = 'save_models/pretrain_regressor'
-PRE_TRAIN_DOMAIN = 'save_models/pretrain_domain'
+PRE_TRAIN_ENCODER = 'save_models/{}pretrain_encoder.pth'
+PRE_TRAIN_REGRESSOR = 'save_models/{}pretrain_regressor.pth'
+PRE_TRAIN_DOMAIN = 'save_models/{}pretrain_domain.pth'
 
 PATH_ENCODER = 'save_models/encoder.pth'
 PATH_REGRESSOR = 'save_models/regressor.pth'

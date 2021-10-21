@@ -12,6 +12,12 @@ import sys
 from config.constants import *
 
 
+def save_all_models(prefix, encoder, regressor, domain_predictor):
+    torch.save(encoder.state_dict(), PRE_TRAIN_ENCODER.format(prefix))
+    torch.save(regressor.state_dict(), PRE_TRAIN_REGRESSOR.format(prefix))
+    torch.save(domain_predictor.state_dict(), PRE_TRAIN_DOMAIN.format(prefix))
+
+
 if __name__ == "__main__":
     cuda = torch.cuda.is_available()
     if cuda:
@@ -20,10 +26,10 @@ if __name__ == "__main__":
     args = Args()
     args.batch_size = 18
     args.learning_rate = 1e-4
-    args.patience = 50
-    args.epochs = 3
+    args.patience = 10
+    args.epochs = 30
     args.epoch_reached = 1
-    args.epoch_stage_1 = 2
+    args.epoch_stage_1 = 15
     args.log_interval = 100
     args.alpha = 1
     args.beta = 10
@@ -73,6 +79,7 @@ if __name__ == "__main__":
     optimizers = [optimizer, optimizer_conf, optimizer_dm]
     criterions = [criteron, conf_criterion, domain_criterion]
 
+    best_cm = 0
     for epoch in range(args.epoch_reached, args.epochs + 1):
         if epoch < args.epoch_stage_1:
             print('Training Main Encoder')
@@ -80,15 +87,19 @@ if __name__ == "__main__":
             loss, acc, dm_loss, conf_loss = train_encoder_unlearn_threedatasets(args, models, train_dataloaders,
                                                                                 optimizers, criterions, epoch)
             torch.cuda.empty_cache()  # Clear memory cache
-            val_loss, val_acc = val_unlearn_threedatasets(args, models, val_dataloaders, criterions)
+            val_loss, val_acc, cm = val_unlearn_threedatasets(args, models, val_dataloaders, criterions)
             loss_store.append([loss, val_loss, acc, val_acc, dm_loss, conf_loss])
 
             np.save(LOSS_PATH, np.array(loss_store))
 
             if epoch == args.epoch_stage_1 - 1:
-                torch.save(encoder.state_dict(), PRE_TRAIN_ENCODER)
-                torch.save(regressor.state_dict(), PRE_TRAIN_REGRESSOR)
-                torch.save(domain_predictor.state_dict(), PRE_TRAIN_DOMAIN)
+                save_all_models('epoch{}_cm{}_'.format(epoch, cm), encoder, regressor, domain_predictor)
+            elif cm > best_cm:
+                print("Better val challange metric score.\n"
+                      "Previous: {:.4f} \t New: {:.4f}"
+                      "Saving models".format(best_cm, cm))
+                best_cm = cm
+                save_all_models('epoch{}_cm{:.4f}_'.format(epoch, cm), encoder, regressor, domain_predictor)
 
         else:
             print('Unlearning')
@@ -96,12 +107,12 @@ if __name__ == "__main__":
 
             if epoch == args.epoch_stage_1:
                 print("Validation before unlearning:")
-                val_loss, val_acc = val_unlearn_threedatasets(args, models, val_dataloaders, criterions)
+                val_loss, val_acc, cm = val_unlearn_threedatasets(args, models, val_dataloaders, criterions)
 
             loss, acc, dm_loss, conf_loss = train_unlearn_threedatasets(args, models, train_dataloaders, optimizers,
                                                                         criterions, epoch)
             torch.cuda.empty_cache()  # Clear memory cache
-            val_loss, val_acc = val_unlearn_threedatasets(args, models, val_dataloaders, criterions)
+            val_loss, val_acc, cm = val_unlearn_threedatasets(args, models, val_dataloaders, criterions)
 
             loss_store.append([loss, val_loss, acc, val_acc, dm_loss, conf_loss])
             np.save(LOSS_PATH, np.array(loss_store))
@@ -117,13 +128,16 @@ if __name__ == "__main__":
             if epoch == args.epochs:
                 print('Finished Training', flush=True)
                 print('Saving the model', flush=True)
-
-                # Save the model in such a way that we can continue training later
-                torch.save(encoder.state_dict(), PATH_ENCODER)
-                torch.save(regressor.state_dict(), PATH_REGRESSOR)
-                torch.save(domain_predictor.state_dict(), PATH_DOMAIN)
-
+                save_all_models('epoch{}_cm{:.4f}_'.format(epoch, cm), encoder, regressor, domain_predictor)
                 loss_store = np.array(loss_store)
                 np.save(LOSS_PATH, loss_store)
+            elif cm > best_cm:
+                print("Better val challange metric score.\n"
+                      "Previous: {:.4f} \t New: {:.4f}"
+                      "Saving models".format(best_cm, cm))
+                best_cm = cm
+                save_all_models('epoch{}_cm{:.4f}_'.format(epoch, cm), encoder, regressor, domain_predictor)
+
+
 
         torch.cuda.empty_cache()  # Clear memory cache

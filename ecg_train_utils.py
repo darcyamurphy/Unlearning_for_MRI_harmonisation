@@ -90,11 +90,11 @@ def train_encoder_unlearn_threedatasets(args, models, train_loaders, optimizers,
         r_loss = criteron(y_pred, target)
 
         if batch_idx == 0:
-            labels_all = target
-            logits_prob_all = y_pred
+            labels_all = target.detach().cpu()
+            logits_prob_all = y_pred.detach().cpu()
         else:
-            labels_all = torch.cat((labels_all, target), 0)
-            logits_prob_all = torch.cat((logits_prob_all, y_pred), 0)
+            labels_all = torch.cat((labels_all, target.detach().cpu()), 0)
+            logits_prob_all = torch.cat((logits_prob_all, y_pred.detach().cpu()), 0)
 
         regressor_loss += r_loss * data.size(0)
         r_loss.backward()
@@ -105,8 +105,8 @@ def train_encoder_unlearn_threedatasets(args, models, train_loaders, optimizers,
         d_loss.backward()
         optimizer_dm.step()
 
-        regressor_loss += r_loss
-        domain_loss += d_loss
+        regressor_loss += r_loss.item()
+        domain_loss += d_loss.item()
 
         domains = np.argmax(domain_pred.detach().cpu().numpy(), axis=1)
         domain_target = np.argmax(domain_target.detach().cpu().numpy(), axis=1)
@@ -163,7 +163,6 @@ def train_unlearn_threedatasets(args, models, train_loaders, optimizers, criteri
     true_domains = []
     pred_domains = []
 
-    first_batch = True
     torch.autograd.set_detect_anomaly(True)
 
     batches = 0
@@ -180,13 +179,12 @@ def train_unlearn_threedatasets(args, models, train_loaders, optimizers, criteri
         output_pred = regressor(features)
         y_pred = sigmoid(output_pred)
 
-        if first_batch:
-            first_batch = False
-            labels_all = target
-            logits_prob_all = y_pred
+        if batch_idx == 0:
+            labels_all = target.detach().cpu()
+            logits_prob_all = y_pred.detach().cpu()
         else:
-            labels_all = torch.cat((labels_all, target), 0)
-            logits_prob_all = torch.cat((logits_prob_all, y_pred), 0)
+            labels_all = torch.cat((labels_all, target.detach().cpu()), 0)
+            logits_prob_all = torch.cat((logits_prob_all, y_pred.detach().cpu()), 0)
 
         loss = criteron(y_pred, target)
         loss.backward()
@@ -209,9 +207,9 @@ def train_unlearn_threedatasets(args, models, train_loaders, optimizers, criteri
         loss_conf.backward()
         optimizer_conf.step()
 
-        regressor_loss += loss
-        domain_loss += loss_dm
-        conf_loss += loss_conf
+        regressor_loss += loss.item()
+        domain_loss += loss_dm.item()
+        conf_loss += loss_conf.item()
 
         output_dm_conf = np.argmax(output_dm_conf.detach().cpu().numpy(), axis=1)
         domain_target = np.argmax(domain_target.detach().cpu().numpy(), axis=1)
@@ -282,19 +280,19 @@ def val_unlearn_threedatasets(args, models, val_loaders, criterions):
             y_pred = sigmoid(output_pred)
 
             if batches == 1:
-                labels_all = target
-                logits_prob_all = y_pred
+                y_true_all = target
+                y_pred_all = y_pred
             else:
-                labels_all = torch.cat((labels_all, target), 0)
-                logits_prob_all = torch.cat((logits_prob_all, y_pred), 0)
+                y_true_all = torch.cat((y_true_all, target), 0)
+                y_pred_all = torch.cat((y_pred_all, y_pred), 0)
 
             loss = criteron(y_pred, target)
-            regressor_loss += loss
+            regressor_loss += loss.item()
 
             domain_pred = domain_predictor.forward(features)
             d_loss = domain_criterion(domain_pred, torch.max(domain_target, 1)[1])
             domain_pred = np.argmax(domain_pred.detach().cpu().numpy(), axis=1)
-            domain_loss += d_loss
+            domain_loss += d_loss.item()
 
             # sometimes domain target is a tensor and sometimes it's already an ndarray and i don't know why!
             if not isinstance(domain_target, np.ndarray):
@@ -311,7 +309,9 @@ def val_unlearn_threedatasets(args, models, val_loaders, criterions):
     acc = accuracy_score(true_domains, pred_domains)
 
     print('Validation set: ')
-    print_metrics(true_domains, pred_domains, labels_all, logits_prob_all, avg_domain_loss, avg_regressor_loss)
+    print_metrics(true_domains, pred_domains, y_true_all, y_pred_all, avg_domain_loss, avg_regressor_loss)
 
-    return avg_regressor_loss, acc
+    challenge_metric = physionet_metrics.calc_accuracy(y_true_all, y_pred_all)
+
+    return avg_regressor_loss, acc, challenge_metric
 
