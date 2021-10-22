@@ -1,3 +1,5 @@
+# Darcy Murphy 2021
+# Adapted from code by Nicola Dinsdale 2020
 import torch.nn as nn
 import models.resnet
 

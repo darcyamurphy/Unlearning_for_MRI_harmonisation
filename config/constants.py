@@ -1,3 +1,4 @@
+# Darcy Murphy 2021
 # paths for saving training output including trained models
 LOSS_PATH = 'save_models/loss_pth'
 

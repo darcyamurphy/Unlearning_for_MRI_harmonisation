@@ -1,3 +1,5 @@
+# Darcy Murphy 2021
+# Adapted from code by Nicola Dinsdale 2020
 import torch
 import numpy as np
 from torch.autograd import Variable

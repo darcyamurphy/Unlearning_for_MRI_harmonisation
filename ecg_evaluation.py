@@ -1,3 +1,4 @@
+# Darcy Murphy 2021
 from models.ecg_predictor import DomainPredictor, Regressor, Encoder
 from utils import Args
 import ecg_utils

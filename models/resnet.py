@@ -1,5 +1,5 @@
+# Code from https://github.com/ZhaoZhibin/AI_Healthcare with minor changes
 import torch.nn as nn
-import torch
 
 
 def conv3x1(in_planes, out_planes, stride=1):
