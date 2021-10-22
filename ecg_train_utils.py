@@ -176,6 +176,9 @@ def train_unlearn_threedatasets(args, models, train_loaders, optimizers, criteri
         # First update the encoder and regressor
         optimizer.zero_grad()
         features = encoder(data)
+        if features.isnan().any():
+            print("features tensor, batch_idx: {}".format(batch_idx))
+            print(features)
         output_pred = regressor(features)
         y_pred = sigmoid(output_pred)
 
@@ -202,8 +205,17 @@ def train_unlearn_threedatasets(args, models, train_loaders, optimizers, criteri
         optimizer_conf.zero_grad()
         with autocast():
             features = encoder(data)
+            if features.isnan().any():
+                print("features tensor, batch_idx: {}".format(batch_idx))
+                print(features)
             output_dm_conf = domain_predictor(features)
+            if output_dm_conf.isnan().any():
+                print("output_dm_conf tensor, batch_idx: {}".format(batch_idx))
+                print(output_dm_conf)
             loss_conf = args.beta * conf_criterion(output_dm_conf, domain_target)
+        if loss_conf.isnan().any():
+            print("loss_conf tensor, batch_idx: {}".format(batch_idx))
+            print(loss_conf)
         loss_conf.backward()
         optimizer_conf.step()
 
