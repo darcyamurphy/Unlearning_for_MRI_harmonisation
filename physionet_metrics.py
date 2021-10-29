@@ -1,8 +1,42 @@
-# Code from https://github.com/ZhaoZhibin/AI_Healthcare with minor changes
+# Code adapted from https://github.com/ZhaoZhibin/AI_Healthcare
 import numpy as np
 import pandas as pd
 import torch
 from config import constants
+
+
+def challenge_metric(y_true, y_pred, threshold=0.5):
+
+    # get index of max prob for each prediction and set predicted label to true for whichever class had highest probability
+    # this is to ensure every example gets at least one prediction even if all predictions are below the threshold
+    y_pred_max_indices = y_pred.argmax(axis=1)
+    y_label = np.zeros(y_true.shape)
+    y_label[np.arange(y_true.shape[0]), y_pred_max_indices] = 1
+
+    # predict true for any class with probability over the threshold
+    y_pred = [x >= threshold for x in y_pred]
+
+    # predict true for any label over the threshold AND the class with the max prediction value
+    # even if that value was below the threshold
+    y_label = np.maximum(y_label, y_pred)
+
+    label_file = pd.read_csv(constants.label_file_dir)
+
+    classes = sorted(list(set([str(name) for name in label_file['SNOMED CT Code']]) - set(constants.drop_classes)))
+
+    weights = load_weights(constants.weights_file, classes)
+
+    # Only consider classes that are scored with the Challenge metric.
+    indices = np.any(weights, axis=0)  # Find indices of classes in weight matrix.
+    classes = [x for i, x in enumerate(classes) if indices[i]]
+    labels = y_true[:, indices]
+    binary_outputs = y_label[:, indices]
+    weights = weights[np.ix_(indices, indices)]
+
+    challenge_metric = compute_challenge_metric(weights, labels, binary_outputs, classes, constants.normal_class)
+
+    # Return the results.
+    return challenge_metric
 
 
 # 计算F1score
@@ -10,12 +44,13 @@ def calc_accuracy(y_true, y_pre, threshold=0.5):
     y_true = y_true.cpu().detach().numpy().astype(np.int)
 
     y_label = np.zeros(y_true.shape)
-    # Generate the one hot encoding labels
+
+    # get indices of max prob for each example (for one hot encoding)
     _, y_pre_label = torch.max(y_pre, 1)
     y_pre_label = y_pre_label.cpu().detach().numpy()
 
+    # use indices to generate one hot encoding of prediction labels
     y_label[np.arange(y_true.shape[0]), y_pre_label] = 1
-    y_prob = y_pre.cpu().detach().numpy()
     y_pre = y_pre.cpu().detach().numpy() >= threshold
 
     y_label = y_label + y_pre
